@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>เครื่องมือสร้างกราฟกำลังไฟฟ้า (Load Profile Generator)</title>
+<link rel="stylesheet" href="style.css">
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/xlsx.full.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-icon">&#9889;</span>
+        <div>
+          <h1>กราฟกำลังไฟฟ้าราย 15 นาที</h1>
+          <span class="brand-sub">จำลองกำลังไฟฟ้าสำหรับสำรวจหน้างานโซลาร์</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== HELP / MANUAL ===== -->
+  <section class="panel" id="help-panel">
+    <details>
+      <summary class="help-summary">คู่มือการใช้งาน (แตะเพื่อเปิด/ปิด)</summary>
+      <div class="help-body">
+        <ol>
+          <li><b>จัดการโครงการ</b> — สร้างโครงการหนึ่งต่อหนึ่งไซต์งาน เช่น "บ้านหลัง A" แล้วเลือกโครงการที่กำลังเก็บข้อมูล</li>
+          <li><b>เพิ่มเครื่องใช้ไฟฟ้า</b> — แตะปุ่มเครื่องใช้ไฟฟ้ายอดนิยมด้านล่าง (แอร์, เครื่องทำน้ำอุ่น, EV ฯลฯ) แล้วปรับกำลังไฟฟ้า (วัตต์) จำนวน และช่วงเวลาการใช้งานใน 1 วัน (เพิ่มได้หลายช่วง เช่น เช้า 09:00–17:00 และเย็น 19:00–21:00)</li>
+          <li><b>ดูกราฟทันที</b> — กราฟจะอัปเดตเองทุกครั้งที่แก้ไขหรือบันทึกข้อมูล *ระบบจำลองรอบทำงานของคอมเพรสเซอร์ ให้ค่ากำลังไฟฟ้าไม่เป็นเส้นตรง*</li>
+          <li><b>อ่านค่าสรุป</b> — พลังงานรวมรายวัน (kWh) · กำลังสูงสุด (kW) · เวลาที่เกิดกำลังสูงสุด</li>
+          <li><b>ส่งออกข้อมูล</b> — กดปุ่ม <b>CSV</b> หรือ <b>Excel</b> เพื่อดาวน์โหลดตารางข้อมูลทุก 15 นาที (96 จุด/วัน) รูปแบบ <span class="mono">YYYY-MM-DD HH:mm</span> + กำลังไฟฟ้า (kW) พร้อมนำไปวางในแบบจำลองขนาดโซลาร์</li>
+        </ol>
+        <p class="help-tip">เคล็ดลับ: สัดส่วนรอบทำงาน (Duty Cycle) ค่า 1 = เปิดต่อเนื่องอย่างเดียวตลอดช่วง เช่น ไฟ/โหลดทั่ว ๆ ไป ค่าต่ำ = ทำงานเป็นช่วง เช่น ตู้เย็น, ปั๊มน้ำ, เครื่องทำน้ำอุ่น</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===== PROJECT MANAGEMENT ===== -->
+  <section class="panel" id="project-panel">
+    <div class="panel-head">
+      <h2>จัดการโครงการ</h2>
+      <button class="btn btn-primary btn-sm" id="btn-new-project">+ โครงการใหม่</button>
+    </div>
+
+    <div class="project-bar">
+      <label class="field-label" for="project-select">โครงการปัจจุบัน</label>
+      <select id="project-select"></select>
+      <div class="project-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-rename-project">เปลี่ยนชื่อ</button>
+        <button class="btn btn-ghost btn-sm" id="btn-backup" title="ดาวน์โหลดไฟล์สำรองข้อมูลทั้งหมด">สำรองข้อมูล</button>
+        <button class="btn btn-ghost btn-sm" id="btn-restore" title="กู้คืนข้อมูลจากไฟล์สำรอง">กู้คืน</button>
+        <button class="btn btn-danger btn-sm" id="btn-delete-project">ลบ</button>
+        <input type="file" id="restore-file" accept=".json,application/json" class="hidden-input">
+      </div>
+    </div>
+  </section>
+
+  <!-- New project dialog -->
+  <div class="modal-overlay hidden" id="project-modal">
+    <div class="modal">
+      <h3 id="project-modal-title">โครงการใหม่</h3>
+      <label class="field-label" for="project-name-input">ชื่อโครงการ</label>
+      <input type="text" id="project-name-input" placeholder="เช่น บ้านหลังที่ 1" maxlength="60">
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-project-cancel">ยกเลิก</button>
+        <button class="btn btn-primary" id="btn-project-ok">บันทึก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== APPLIANCE PRESETS ===== -->
+  <section class="panel" id="preset-panel">
+    <div class="panel-head">
+      <h2>เพิ่มเครื่องใช้ไฟฟ้าอย่างรวดเร็ว</h2>
+    </div>
+    <div class="preset-grid" id="preset-grid"></div>
+  </section>
+
+  <!-- ===== APPLIANCE LIST ===== -->
+  <section class="panel" id="appliance-panel">
+    <div class="panel-head">
+      <h2>เครื่องใช้ไฟฟ้า</h2>
+      <span class="count-badge" id="appliance-count">0</span>
+    </div>
+    <div id="appliance-list" class="appliance-list"></div>
+    <button class="btn btn-ghost btn-block" id="btn-add-custom">+ เพิ่มเครื่องใช้ไฟฟ้าแบบกำหนดเอง</button>
+  </section>
+
+  <!-- Appliance editor modal -->
+  <div class="modal-overlay hidden" id="appliance-modal">
+    <div class="modal modal-wide">
+      <h3 id="appliance-modal-title">แก้ไขเครื่องใช้ไฟฟ้า</h3>
+
+      <label class="field-label" for="app-name">ชื่อเครื่องใช้ไฟฟ้า</label>
+      <input type="text" id="app-name" placeholder="เช่น แอร์ห้องนั่งเล่น">
+
+      <div class="form-row">
+        <div>
+          <label class="field-label" for="app-power">กำลังไฟฟ้า (วัตต์)</label>
+          <input type="number" id="app-power" min="0" step="10" value="1000">
+        </div>
+        <div>
+          <label class="field-label" for="app-qty">จำนวน</label>
+          <input type="number" id="app-qty" min="1" step="1" value="1">
+        </div>
+      </div>
+
+      <label class="field-label" for="app-type">ประเภทการทำงาน</label>
+      <select id="app-type">
+        <option value="inverter-ac">แอร์อินเวอร์เตอร์ (ลดกำลังเองเมื่อถึงอุณหภูมิ)</option>
+        <option value="fixed-ac">แอร์ธรรมดา (เปิด-ปิดรอบทำงาน)</option>
+        <option value="water-heater">เครื่องทำน้ำอุ่น</option>
+        <option value="ev-charger">ที่ชาร์จ EV</option>
+        <option value="refrigerator">ตู้เย็น (ทำงานต่อเนื่องทั้งวัน)</option>
+        <option value="pump">ปั๊มน้ำ (ทำงานเป็นช่วงสั้น)</option>
+        <option value="lighting">ไฟแสงสว่าง / โหลดต่อเนื่อง</option>
+        <option value="custom">กำหนดเอง / อื่น ๆ</option>
+      </select>
+
+      <div class="form-row">
+        <div>
+          <label class="field-label" for="app-duty">สัดส่วนรอบทำงาน Duty Cycle (0-1)</label>
+          <input type="number" id="app-duty" min="0" max="1" step="0.05" value="0.6">
+        </div>
+        <div>
+          <label class="field-label" for="app-startup">ตัวคูณกำลังตอนสตาร์ท</label>
+          <input type="number" id="app-startup" min="1" step="0.1" value="1.0">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label class="field-label" for="app-startup-min">ระยะเวลาช่วงสตาร์ท (นาที)</label>
+          <input type="number" id="app-startup-min" min="0" step="1" value="5">
+        </div>
+        <div>
+          <label class="field-label" for="app-cool-down">ระยะเวลาช่วงลดกำลัง (นาที)</label>
+          <input type="number" id="app-cool-down" min="0" step="1" value="10">
+        </div>
+      </div>
+
+      <div class="time-slots-block">
+        <div class="panel-head">
+          <h4>ช่วงเวลาการใช้งาน</h4>
+          <button class="btn btn-primary btn-sm" id="btn-add-slot">+ เพิ่มช่วงเวลา</button>
+        </div>
+        <div id="slot-list"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-app-cancel">ยกเลิก</button>
+        <button class="btn btn-primary" id="btn-app-ok">บันทึก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RESULTS / SIMULATION ===== -->
+  <section class="panel" id="results-panel">
+    <div class="panel-head">
+      <h2>กราฟกำลังไฟฟ้า (Load Profile)</h2>
+      <div class="export-btns">
+        <button class="btn btn-ghost btn-sm" id="btn-export-csv" title="ดาวน์โหลดไฟล์ CSV">CSV</button>
+        <button class="btn btn-ghost btn-sm" id="btn-export-xlsx" title="ดาวน์โหลดไฟล์ Excel">Excel</button>
+      </div>
+    </div>
+
+    <div class="metrics-grid" id="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-value" id="m-total">0.0</div>
+        <div class="metric-label">พลังงานรวมรายวัน (kWh)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="m-peak">0.0</div>
+        <div class="metric-label">กำลังไฟฟ้าสูงสุด (kW)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="m-peak-time">--:--</div>
+        <div class="metric-label">เวลาที่เกิดกำลังสูงสุด</div>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="profile-chart"></canvas>
+    </div>
+    <div class="chart-hint">ข้อมูลทุก 15 นาที · 96 จุด/วัน · จำลองรอบทำงานอย่างสมจริง</div>
+  </section>
+
+  <!-- ===== DATA TABLE ===== -->
+  <section class="panel" id="table-panel">
+    <div class="panel-head">
+      <h2>ตารางข้อมูล</h2>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <table id="data-table">
+        <thead>
+          <tr><th>เวลา</th><th>กำลังไฟฟ้า (kW)</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
