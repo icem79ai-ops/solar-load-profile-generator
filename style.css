@@ -539,3 +539,18 @@ tbody tr:hover { background: var(--panel-hover); }
   .preset-grid { grid-template-columns: repeat(2, 1fr); }
   .form-row { grid-template-columns: 1fr; }
 }
+
+/* ===== Footer / Copyright ===== */
+.app-footer {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 18px 14px 28px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+.app-footer p { margin: 0; }
+.app-footer strong { color: var(--text); font-weight: 600; }
+.app-footer .footer-sub { margin-top: 4px; font-size: 11px; opacity: 0.75; }
